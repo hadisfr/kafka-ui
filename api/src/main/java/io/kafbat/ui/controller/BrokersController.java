@@ -1,6 +1,8 @@
 package io.kafbat.ui.controller;
 
 import io.kafbat.ui.api.BrokersApi;
+import io.kafbat.ui.config.Config;
+import io.kafbat.ui.exception.ClusterNotFoundException;
 import io.kafbat.ui.mapper.ClusterMapper;
 import io.kafbat.ui.model.BrokerConfigDTO;
 import io.kafbat.ui.model.BrokerConfigItemDTO;
@@ -30,6 +32,7 @@ public class BrokersController extends AbstractController implements BrokersApi 
 
   private final BrokerService brokerService;
   private final ClusterMapper clusterMapper;
+  private final Config config;
 
   @Override
   public Mono<ResponseEntity<Flux<BrokerDTO>>> getBrokers(String clusterName,
@@ -94,10 +97,24 @@ public class BrokersController extends AbstractController implements BrokersApi 
         .operationParams(Map.of(BROKER_ID, id))
         .build();
 
+    Flux<BrokerConfigDTO> brokerConfigs = brokerService.getBrokerConfig(getCluster(clusterName), id)
+        .map(clusterMapper::toBrokerConfig);
+
+    var kafkaCluster = clustersStorage.getClusterByName(clusterName)
+        .orElseThrow(
+            () -> new ClusterNotFoundException(
+                String.format("No cluster for name '%s'", clusterName)));
+
+    if (kafkaCluster.isReadOnly()) {
+      brokerConfigs = brokerConfigs.map(config -> {
+        config.setIsReadOnly(true);
+        return config;
+      });
+    }
+
     return validateAccess(context).thenReturn(
         ResponseEntity.ok(
-            brokerService.getBrokerConfig(getCluster(clusterName), id)
-                .map(clusterMapper::toBrokerConfig))
+            brokerConfigs)
     ).doOnEach(sig -> audit(context, sig));
   }
 
