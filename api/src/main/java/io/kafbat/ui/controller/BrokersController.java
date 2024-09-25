@@ -16,6 +16,7 @@ import java.util.Map;
 import javax.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
@@ -94,8 +95,14 @@ public class BrokersController extends AbstractController implements BrokersApi 
         .operationParams(Map.of(BROKER_ID, id))
         .build();
 
+    return validateAccess(context).thenReturn(
+        getBrokerConfigIml(id, clusterName)
+    ).doOnEach(sig -> audit(context, sig));
+  }
+
+  private @NotNull ResponseEntity<Flux<BrokerConfigDTO>> getBrokerConfigIml(Integer id, String clusterName) {
     var kafkaCluster = getCluster(clusterName);
-    Flux<BrokerConfigDTO> brokerConfigs = brokerService.getBrokerConfig(kafkaCluster, id)
+    var brokerConfigs = brokerService.getBrokerConfig(kafkaCluster, id)
         .map(clusterMapper::toBrokerConfig);
 
     if (kafkaCluster.isReadOnly()) {
@@ -105,10 +112,7 @@ public class BrokersController extends AbstractController implements BrokersApi 
       });
     }
 
-    return validateAccess(context).thenReturn(
-        ResponseEntity.ok(
-            brokerConfigs)
-    ).doOnEach(sig -> audit(context, sig));
+    return ResponseEntity.ok(brokerConfigs);
   }
 
   @Override
